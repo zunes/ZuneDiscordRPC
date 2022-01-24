@@ -27,7 +27,7 @@ largeImage=original_zune_logo
 **NOTE:** Discord limits the length of the url, so your custom image might not work if the url is too long.
 
 ### Predefined Logos
-- ``modern_zune_logo``
+- ``modern_zune_logo``: Thanks to Eric Mendoza (The Hat-Man)! 
 - ``original_zune_logo``
 
 
