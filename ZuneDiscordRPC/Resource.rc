@@ -65,6 +65,8 @@ BEGIN
     POPUP "ZuneDiscordRPC"
     BEGIN
         MENUITEM "Toggle Console",              ID_ZUNEDISCORDRPC_SHOWCONSOLE
+        MENUITEM "Open Settings File",          ID_ZUNEDISCORDRPC_OPENSETTINGSFILE
+        MENUITEM "Reload Settings",             ID_ZUNEDISCORDRPC_RELOADSETTINGS
         MENUITEM "Exit",                        ID_ZUNEDISCORDRPC_EXIT
     END
 END

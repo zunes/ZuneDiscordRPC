@@ -8,15 +8,75 @@
 #include <shellapi.h>
 #include "resource.h"
 #include <strsafe.h>
+#include <fstream>
 
 constexpr int64_t DS_CLIENT_ID = 904704369998561321;
 constexpr wchar_t MSN_CLASS_NAME[] = L"MsnMsgrUIManager";
 constexpr unsigned int IDT_TIMER_DISCORD_TICK = (WM_USER + 1);
 constexpr unsigned int NOTIFICATION_TRAY_ICON = (WM_USER + 2);
+constexpr wchar_t SETTINGS_FILE[] = L"settings.ini";
+
+struct {
+	bool showAlbumArt = true;
+	bool showSmallImage = true;
+	std::string largeImage = "modern_zune_logo";
+	std::string smallImage = "original_zune_logo";
+
+	struct {
+		const std::string SMALL_IMAGE = "smalImage";
+		const std::string LARGE_IMAGE = "largeImage";
+		const std::string SHOW_ALBUM_ART = "showAlbumArt";
+	} KEYS;
+} gSettings;
 
 HINSTANCE hInstance;
-
 discord::Core* core{};
+
+void ReadSettings() {
+	std::ifstream file(SETTINGS_FILE);
+	if (file.is_open() == false) {
+		std::cout << "No Settings file found... Creating default." << std::endl;
+
+		std::ofstream ofile(SETTINGS_FILE);
+		ofile << gSettings.KEYS.SHOW_ALBUM_ART	<< "=" << gSettings.showAlbumArt << std::endl;
+		ofile << gSettings.KEYS.LARGE_IMAGE		<< "=" << gSettings.largeImage << std::endl;
+		ofile << gSettings.KEYS.SMALL_IMAGE		<< "=" << gSettings.smallImage << std::endl;
+		ofile.close();
+		return;
+	}
+
+	std::string line;
+	int linenr = 0;
+	while (std::getline(file, line)) {
+		int splitIndex = line.find('=');
+
+		if (splitIndex == std::string::npos) {
+			std::cerr << "Inavlid syntax on line #" << linenr << " of settings file." << std::endl;
+			continue;
+		}
+
+		std::string key = line.substr(0, splitIndex);
+		std::string value = line.substr(splitIndex + 1);
+
+		if (key == gSettings.KEYS.LARGE_IMAGE) {
+			gSettings.largeImage = value;
+		} 
+		else if (key == gSettings.KEYS.SMALL_IMAGE) {
+			gSettings.smallImage = value;
+			gSettings.showSmallImage = !value.empty();
+		}
+		else if (key == gSettings.KEYS.SHOW_ALBUM_ART) {
+			gSettings.showAlbumArt = (value == "1" ? true : false);
+		}
+		else {
+			std::cerr << "Unknown Key: " << key << " on line #" << linenr << " of settings file." << std::endl;
+			continue;
+		}
+
+		std::cout << key << "=" << value << std::endl;
+		linenr++;
+	}
+}
 
 void ReplaceAll(std::string& string, const std::string& search, const std::string& replace) {
 	size_t pos = string.find(search);
@@ -35,6 +95,12 @@ std::string GetAlbumImageURL(const std::string& artist, const std::string& album
 
 	if (response.status != http::Response::Status::Ok) {
 		std::cerr << coverUrl << std::endl;
+		return gSettings.largeImage;
+	}
+
+	if (coverUrl == "{\"data\":[],\"total\":0}") {
+		std::cout << "No cover iamge found :(" << std::endl;
+		return gSettings.largeImage;
 	}
 
 	int index = coverUrl.find("cover") + 8;
@@ -42,19 +108,32 @@ std::string GetAlbumImageURL(const std::string& artist, const std::string& album
 	index = coverUrl.find("\"");
 	coverUrl = coverUrl.substr(0, index);
 
+	std::cout << "Found Album URL: " << coverUrl << std::endl;
+
 	ReplaceAll(coverUrl, "\\", "");
 	return coverUrl;
 }
 
 void SetDiscordPlaying(const std::string& title, const std::string& album, const std::string& artist) {
 	std::string details = artist + " - " + title;
-	std::string albumCover = GetAlbumImageURL(artist, album);
+	std::string albumCover;
+
+	if (gSettings.showAlbumArt) {
+		albumCover = GetAlbumImageURL(artist, album);
+	}
+	else {
+		albumCover = gSettings.largeImage;
+	}
+
 
 	discord::Activity activity{};
 	activity.SetDetails(details.c_str());
 	activity.SetState(album.c_str());
-	activity.GetAssets().SetSmallImage("original_zune_logo");
 	activity.GetAssets().SetLargeImage(albumCover.c_str());
+
+	if (gSettings.showSmallImage) {
+		activity.GetAssets().SetSmallImage(gSettings.smallImage.c_str());
+	}
 
 	core->ActivityManager().UpdateActivity(activity, [](discord::Result result) {
 		if (result != discord::Result::Ok) {
@@ -135,6 +214,12 @@ LRESULT OnCommand(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		ShowWindow(GetConsoleWindow(), show);
 		}
 		break;
+	case ID_ZUNEDISCORDRPC_OPENSETTINGSFILE:
+		ShellExecute(0, 0, SETTINGS_FILE, 0, 0, SW_SHOW);
+		break;
+	case ID_ZUNEDISCORDRPC_RELOADSETTINGS:
+		ReadSettings();
+		break;
 	case ID_ZUNEDISCORDRPC_EXIT:
 		DestroyWindow(hWnd);
 		break;
@@ -150,10 +235,9 @@ void OnTrayIcon(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	if (LOWORD(lParam) == WM_CONTEXTMENU) {
 		HMENU hMenu = LoadMenu(hInstance, MAKEINTRESOURCE(IDR_CONTEXT_MENU));
 		HMENU hSubMenu = GetSubMenu(hMenu, 0);
+		POINT pt = { LOWORD(wParam), HIWORD(wParam) };
 
 		SetForegroundWindow(hWnd);
-
-		POINT pt = { LOWORD(wParam), HIWORD(wParam) };
 
 		UINT uFlags = TPM_RIGHTBUTTON;
 		if (GetSystemMetrics(SM_MENUDROPALIGNMENT) != 0) {
@@ -193,6 +277,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 }
 
 int main() {
+	ShowWindow(GetConsoleWindow(), SW_HIDE);
+
+	ReadSettings();
+
 	hInstance = GetModuleHandle(NULL);
 	//Create Hidden Window to receive messges from Zune
 	WNDCLASS wc = {};
@@ -220,10 +308,6 @@ int main() {
 	//Set Tick timer for discord
 	SetTimer(hWnd, IDT_TIMER_DISCORD_TICK, 500, NULL);
 
-	HMENU menue = CreatePopupMenu();
-	AppendMenu(menue, MF_STRING, 0, L"Show Console");
-	AppendMenu(menue, MF_STRING, 0, L"Exit");
-	
 	//Show Tray Icon
 	NOTIFYICONDATA trayIcon{};
 	trayIcon.cbSize = sizeof(trayIcon);
@@ -236,9 +320,6 @@ int main() {
 	StringCchCopy(trayIcon.szTip, ARRAYSIZE(trayIcon.szTip), L"ZuneDiscordRPC");
 	Shell_NotifyIcon(NIM_ADD, &trayIcon);
 	Shell_NotifyIcon(NIM_SETVERSION, &trayIcon);
-
-
-	ShowWindow(GetConsoleWindow(), SW_HIDE);
 
 	//Start msg pump
 	UpdateWindow(hWnd);
