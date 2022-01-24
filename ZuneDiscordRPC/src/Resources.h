@@ -7,3 +7,5 @@ EXTERN_C IMAGE_DOS_HEADER __ImageBase;
 
 constexpr int64_t DS_CLIENT_ID = 904704369998561321;
 constexpr wchar_t MSN_CLASS_NAME[] = L"MsnMsgrUIManager";
+constexpr int WINDOW_WIDTH = 200;
+constexpr int WINDOW_HEIGHT = 300;

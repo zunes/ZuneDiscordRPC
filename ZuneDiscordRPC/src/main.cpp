@@ -1,4 +1,5 @@
-﻿#include <iostream>
+﻿#include <HTTPRequest.hpp>
+#include <iostream>
 #include <Windows.h>
 #include <string>
 #include <fcntl.h>
@@ -10,16 +11,48 @@
 #include <thread>
 #include <chrono>
 #include <codecvt>
+#include <CommCtrl.h>
 
 discord::Core* core{};
 std::atomic<bool> shouldClose = false;
 
+void ReplaceAll(std::string& string, const std::string& search, const std::string& replace) {
+	size_t pos = string.find(search);
+	while (pos != std::string::npos) {
+		string.replace(pos, search.size(), replace);
+		pos = string.find(search, pos+replace.size());
+	}
+}
+
+std::string GetAlbumImageURL(const std::string& artist, const std::string& album) {
+	std::string requestURL = "http://api.deezer.com/search/album?q=artist:\"" + artist + "\" album:\"" + album + "\"";
+	ReplaceAll(requestURL, " ", "%20");
+	http::Request request(requestURL);
+	const auto response = request.send("GET");
+	std::string coverUrl{ response.body.begin(), response.body.end() };
+
+	if (response.status != http::Response::Status::Ok) {
+		std::cerr << coverUrl << std::endl;
+	}
+
+	int index = coverUrl.find("cover") + 8;
+	coverUrl = coverUrl.substr(index);
+	index = coverUrl.find("\"");
+	coverUrl = coverUrl.substr(0, index);
+
+	ReplaceAll(coverUrl, "\\", "");
+	return coverUrl;
+}
+
 void SetDiscordPlaying(const std::string& title, const std::string& album, const std::string& artist) {
-	discord::Activity activity{};
 	std::string details = artist + " - " + title;
+	std::string albumCover = GetAlbumImageURL(artist, album);
+
+	discord::Activity activity{};
 	activity.SetDetails(details.c_str());
 	activity.SetState(album.c_str());
-	activity.GetAssets().SetLargeImage("modern_zune_logo");
+	activity.GetAssets().SetSmallImage("original_zune_logo");
+	activity.GetAssets().SetLargeImage(albumCover.c_str());
 
 	core->ActivityManager().UpdateActivity(activity, [](discord::Result result) {
 		if (result != discord::Result::Ok) {
@@ -112,9 +145,11 @@ int main() {
 	wc.lpszClassName = MSN_CLASS_NAME;
 	wc.hInstance = HINST_THISCOMPONENT;
 	wc.lpfnWndProc = WindowProc;
+	//wc.hbrBackground = CreateSolidBrush(RGB(54, 57, 63));
 	RegisterClass(&wc);
 
-	HWND hWnd = CreateWindow(MSN_CLASS_NAME, L"",WS_DISABLED, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, HINST_THISCOMPONENT, NULL);
+	HWND hWnd = CreateWindow(MSN_CLASS_NAME, L"", WS_DISABLED, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, HINST_THISCOMPONENT, NULL);
+
 	if (!hWnd) {
 		std::cerr << "Error: Could not create window!" << std::endl;
 		return -1;
@@ -129,7 +164,8 @@ int main() {
 	}
 	std::thread discordTickThread(DiscordTick);
 	std::wcout << "Initialized Discord RPC!" << std::endl;
-	
+
+
 	UpdateWindow(hWnd);
 	MSG msg = {};
 	while (GetMessage(&msg, NULL, 0, 0) > 0) {
