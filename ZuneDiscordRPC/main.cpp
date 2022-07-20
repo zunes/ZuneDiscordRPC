@@ -1,4 +1,4 @@
-﻿#include <HTTPRequest.hpp>
+﻿#include <cpp-httplib/httplib.h>
 #include <iostream>
 #include <Windows.h>
 #include <string>
@@ -21,8 +21,10 @@ struct {
 	bool showSmallImage = true;
 	std::string largeImage = "modern_zune_logo";
 	std::string smallImage = "original_zune_logo";
+	std::string coverProvider = "MB"; //MB=MusicBrainz,D=Deezer 
 
 	struct {
+		const std::string COVERARTPROVIDER = "coverProvider";
 		const std::string SMALL_IMAGE = "smalImage";
 		const std::string LARGE_IMAGE = "largeImage";
 		const std::string SHOW_ALBUM_ART = "showAlbumArt";
@@ -41,6 +43,7 @@ void ReadSettings() {
 		ofile << gSettings.KEYS.SHOW_ALBUM_ART	<< "=" << gSettings.showAlbumArt << std::endl;
 		ofile << gSettings.KEYS.LARGE_IMAGE		<< "=" << gSettings.largeImage << std::endl;
 		ofile << gSettings.KEYS.SMALL_IMAGE		<< "=" << gSettings.smallImage << std::endl;
+		ofile << gSettings.KEYS.COVERARTPROVIDER << "=" << gSettings.coverProvider << std::endl;
 		ofile.close();
 		return;
 	}
@@ -68,6 +71,9 @@ void ReadSettings() {
 		else if (key == gSettings.KEYS.SHOW_ALBUM_ART) {
 			gSettings.showAlbumArt = (value == "1" ? true : false);
 		}
+		else if (key == gSettings.KEYS.COVERARTPROVIDER) {
+			gSettings.coverProvider = value;
+		}
 		else {
 			std::cerr << "Unknown Key: " << key << " on line #" << linenr << " of settings file." << std::endl;
 			continue;
@@ -85,15 +91,55 @@ void ReplaceAll(std::string& string, const std::string& search, const std::strin
 		pos = string.find(search, pos+replace.size());
 	}
 }
+std::string GetWebContent(std::string& requestURL) {
+	std::string url = requestURL, path, host;
+	ReplaceAll(url, " ", "%20");
+	//std::cout << requestURL << std::endl;
+
+	const auto schemeEndPosition = url.find("://");
+
+	if (schemeEndPosition != std::string::npos) {
+		path = url.substr(schemeEndPosition + 3);
+	}
+	else {
+		path = url;
+	}
+
+	const auto fragmentPosition = path.find('#');
+
+	// remove the fragment part
+	if (fragmentPosition != std::string::npos)
+		path.resize(fragmentPosition);
+
+	const auto pathPosition = path.find('/');
+
+	if (pathPosition == std::string::npos) {
+		host = path;
+		path = "/";
+	}
+	else {
+		host = path.substr(0, pathPosition);
+		path = path.substr(pathPosition);
+	}
+	httplib::Client r(host);
+	r.set_default_headers(
+		{ { "User-Agent", "ZuneDiscordRDP/<3.0> ( help@zunes.me )" }//MusicBrainz needs a user agent with the request, or else it filters the request out as bot traffic
+		});
+	r.set_follow_location(true);//Used for redirects
+	httplib::Result response = r.Get(path.c_str());
+	if (response.error() != httplib::Error::Success) {
+		std::cout << "Response Error: " << response.error() << std::endl;
+		return "404";
+	}
+	std::string str = response.value().body;
+	return str;
+}
 
 std::string GetAlbumImageURL(const std::string& artist, const std::string& album) {
 	std::string requestURL = "http://api.deezer.com/search/album?q=artist:\"" + artist + "\" album:\"" + album + "\"";
-	ReplaceAll(requestURL, " ", "%20");
-	http::Request request(requestURL);
-	const auto response = request.send("GET");
-	std::string coverUrl{ response.body.begin(), response.body.end() };
+	std::string coverUrl = GetWebContent(requestURL);
 
-	if (response.status != http::Response::Status::Ok) {
+	if (coverUrl == "404") {
 		std::cerr << coverUrl << std::endl;
 		return gSettings.largeImage;
 	}
@@ -113,13 +159,38 @@ std::string GetAlbumImageURL(const std::string& artist, const std::string& album
 	ReplaceAll(coverUrl, "\\", "");
 	return coverUrl;
 }
+std::string parseMBAddress(std::string address) {
+	std::string body = GetWebContent(address);
+	if (body == "" || body=="404") {
+		return gSettings.largeImage;
+	}
+	std::string temp = body.substr(body.find("release-group") + 22);
+	std::string MBreleaseID = temp.substr(0, temp.find("\""));
+	std::string coverUrl = "http://coverartarchive.org/release-group/" + MBreleaseID;
+	return GetWebContent(coverUrl);
+}
+std::string GetMusicBrainzAlbumImageURL(const std::string& artist, const std::string& album, const std::string& title) {
+	//Release can find more acurate results, but can sometimes mess-up, thus recording is used as a backup
+	std::string add= "http://musicbrainz.org/ws/2/release/?query=artist:\"" + artist + "\" recording:\"" + title + "\" release:\"" + album + "\"&fmt=json&limit=1", covBody = parseMBAddress(add), coverUrl = "";
+	if (covBody.find("Not Found") != -1 || covBody.find("Bad Request") != -1) {
+		covBody = parseMBAddress("http://musicbrainz.org/ws/2/recording/?query=artist:\"" + artist + "\" recording:\"" + title + "\" release:\"" + album + "\"&fmt=json&limit=1");
+	}
+	if (covBody.find("Not Found")!=-1 || covBody.find("Bad Request") != -1) {
+		std::cerr << coverUrl << std::endl;
+		return gSettings.largeImage;
+	}
+	std::string covRedirPart = covBody.substr(covBody.find("\"image\":") + 9);
+	coverUrl = covRedirPart.substr(0, covRedirPart.find("\""));
+	std::cout << "Found Album URL: " << coverUrl << std::endl;
+	return coverUrl;
+}
 
 void SetDiscordPlaying(const std::string& title, const std::string& album, const std::string& artist) {
 	std::string details = artist + " - " + title;
 	std::string albumCover;
 
-	if (gSettings.showAlbumArt) {
-		albumCover = GetAlbumImageURL(artist, album);
+	if (gSettings.showAlbumArt && !(artist=="" || title=="")) {
+		if (gSettings.coverProvider == "MB") albumCover = GetMusicBrainzAlbumImageURL(artist, album, title); else albumCover = GetAlbumImageURL(artist, album);
 	}
 	else {
 		albumCover = gSettings.largeImage;
@@ -130,6 +201,7 @@ void SetDiscordPlaying(const std::string& title, const std::string& album, const
 	activity.SetDetails(details.c_str());
 	activity.SetState(album.c_str());
 	activity.GetAssets().SetLargeImage(albumCover.c_str());
+	if (albumCover == gSettings.largeImage) std::cout << "No Image Found" << std::endl;
 
 	if (gSettings.showSmallImage) {
 		activity.GetAssets().SetSmallImage(gSettings.smallImage.c_str());
@@ -170,14 +242,14 @@ void OnCopyData(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		SetDiscordStopped();
 	}
 	else {
-		//Playing
-		std::stringstream tmp(zuneMsg);
-		std::string segment;
-		int index = 0;
+	//Playing
+	std::stringstream tmp(zuneMsg);
+	std::string segment;
+	int index = 0;
 
-		std::string artist;
-		std::string title;
-		std::string album;
+	std::string artist;
+	std::string title;
+	std::string album;
 
 		while (std::getline(tmp, segment, '\\')) {
 			if (index == 4) {
