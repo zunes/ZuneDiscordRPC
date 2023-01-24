@@ -1,3 +1,5 @@
 x64
 .vs
 ZuneDiscordRPC/x64
+ZuneDiscordRPC/obj
+build

@@ -1,3 +1,0 @@
-[submodule "ZuneDiscordRPC/ext/HTTPRequest"]
-	path = ZuneDiscordRPC/ext/HTTPRequest
-	url = https://github.com/elnormous/HTTPRequest
