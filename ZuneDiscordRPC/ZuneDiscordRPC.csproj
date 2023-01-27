@@ -33,6 +33,8 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="System.Data" />
@@ -45,11 +47,31 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Config\ConfigWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Config\ConfigWindow.Designer.cs">
+      <DependentUpon>ConfigWindow.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Discord\ActivityManager.cs" />
+    <Compile Include="Discord\Constants.cs" />
+    <Compile Include="Discord\Core.cs" />
+    <Compile Include="DiscordActivity.cs" />
+    <Compile Include="Discord\ImageManager.cs" />
+    <Compile Include="Discord\LobbyManager.cs" />
+    <Compile Include="Discord\StorageManager.cs" />
+    <Compile Include="Discord\StoreManager.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="ZuneAPI.cs" />
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="Discord\" />
+    <EmbeddedResource Include="Config\ConfigWindow.resx">
+      <DependentUpon>ConfigWindow.cs</DependentUpon>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PostBuildEvent>xcopy "$(ProjectDir)lib\discord_game_sdk.dll" "$(OutDir)" /Y</PostBuildEvent>
+  </PropertyGroup>
 </Project>
