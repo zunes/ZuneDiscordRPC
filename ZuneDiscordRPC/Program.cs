@@ -11,7 +11,8 @@ namespace ZuneDiscordRPC
         static void Main(string[] args) {
             object dlock = new object();
 
-            ZuneAPI zune = new ZuneAPI();
+            var albumArtProvider = new DeezerAlbumArtProvider();
+            ZuneAPI zune = new ZuneAPI(albumArtProvider);
             DiscordActivity activity = new DiscordActivity();
 
 
@@ -23,7 +24,7 @@ namespace ZuneDiscordRPC
 
             zune.OnStopped += (object sender, EventArgs e) => {
                 lock (dlock) {
-                    activity.Stop();
+                    activity.Pause();
                 }
             };
 

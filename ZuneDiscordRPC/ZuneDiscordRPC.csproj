@@ -47,6 +47,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DeezerAlbumArtProvider.cs" />
+    <Compile Include="IAlbumArtProvider.cs" />
     <Compile Include="Config\ConfigWindow.cs">
       <SubType>Form</SubType>
     </Compile>

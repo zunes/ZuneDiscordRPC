@@ -14,6 +14,7 @@ namespace ZuneDiscordRPC {
         public string Title;
         public string Artist;
         public string Album;
+        public string ArtUrl;
         public double Duration;
     }
 
@@ -24,7 +25,9 @@ namespace ZuneDiscordRPC {
 
         public volatile bool IsRunning;
 
-        public ZuneAPI() {
+        public ZuneAPI(IAlbumArtProvider albumArtProvider) {
+            m_AlbumArtProvider = albumArtProvider;
+
             m_ZuneThread = new Thread(LaunchZune);
             m_ZuneThread.Start();
 
@@ -65,6 +68,7 @@ namespace ZuneDiscordRPC {
                     args.Album = albumMetadata.AlbumTitle;
                     args.Title = track.Title;
                     args.Duration = track.Duration.TotalSeconds;
+                    args.ArtUrl = m_AlbumArtProvider.GetAlbumArt(albumMetadata.AlbumTitle, albumMetadata.AlbumArtist);
                     OnTrackChanged?.Invoke(this, args);
                 }
             }
@@ -99,5 +103,6 @@ namespace ZuneDiscordRPC {
 
         private MicrosoftZunePlayback.MCTransportState m_TransportState;
         private Thread m_ZuneThread;
+        private IAlbumArtProvider m_AlbumArtProvider;
     }
 }
